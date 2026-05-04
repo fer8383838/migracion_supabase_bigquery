@@ -19,8 +19,8 @@ PROJECT_ID = "rock-hangar-470622-u5"
 DATASET_ID = "conjunto_datos_propio"
 client = bigquery.Client(project=PROJECT_ID)
 
-# 3. Lista de tablas a migrar (Tus 3 tablas)
-tablas_a_migrar = ["job_offers_linkedin", "ofertas_empleo", "ofertashistorial"]
+# 3. Lista de tablas a migrar (CORREGIDA)
+tablas_a_migrar = ["job_offers_linkedin", "ofertas_empleo", "ofertas_historial"]
 
 print("Iniciando migración masiva...")
 
