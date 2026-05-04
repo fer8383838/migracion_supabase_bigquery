@@ -1,0 +1,32 @@
+name: Sync Supabase to BigQuery
+
+on:
+  schedule:
+    - cron: '0 5 * * *' # Corre todos los días a las 5:00 AM UTC (Medianoche en Perú)
+  workflow_dispatch: # Botón para forzar la actualización a mano
+
+jobs:
+  migracion:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout del código
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+
+      - name: Instalar dependencias
+        run: |
+          pip install pandas pandas-gbq sqlalchemy psycopg2-binary google-cloud-bigquery pyarrow db-dtypes
+
+      - name: Crear archivo de credenciales GCP
+        run: |
+          echo '${{ secrets.GCP_SA_KEY }}' > credentials.json
+
+      - name: Ejecutar script de Python
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ github.workspace }}/credentials.json
+          SUPABASE_PASSWORD: ${{ secrets.SUPABASE_PASSWORD }}
+        run: python migracion.py
