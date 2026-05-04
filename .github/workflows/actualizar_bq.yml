@@ -2,12 +2,14 @@ name: Sync Supabase to BigQuery
 
 on:
   schedule:
-    - cron: '0 5 * * *' # Corre todos los días a las 5:00 AM UTC (Medianoche en Perú)
-  workflow_dispatch: # Botón para forzar la actualización a mano
+    - cron: '0 5 * * *'
+  workflow_dispatch:
 
 jobs:
   migracion:
     runs-on: ubuntu-latest
+    env: # <--- Lo ponemos aquí para que aplique a todo el proceso
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout del código
         uses: actions/checkout@v4
