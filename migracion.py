@@ -1,6 +1,7 @@
 import os
 import sys
 import traceback
+import datetime # <-- Agregado para leer los formatos de fecha
 import pandas as pd
 from sqlalchemy import create_engine
 from google.cloud import bigquery
@@ -53,6 +54,15 @@ try:
                 print(f"[{tabla}] No hay datos nuevos en este periodo. Saltando...")
                 continue
 
+            # PASO 1.5: Limpieza de tipos de datos para PyArrow (EL FIX)
+            # Esto busca columnas que Pandas guardó como texto, pero que por dentro tienen fechas
+            for col in df_nuevos.columns:
+                if df_nuevos[col].dtype == 'object':
+                    valid_data = df_nuevos[col].dropna()
+                    # Si el primer dato válido de la columna es una fecha, convierte toda la columna
+                    if not valid_data.empty and isinstance(valid_data.iloc[0], datetime.date):
+                        df_nuevos[col] = pd.to_datetime(df_nuevos[col])
+
             # PASO 2: Verificar IDs
             try:
                 query_bq = f"SELECT {col_id} FROM `{table_id}`"
@@ -76,21 +86,18 @@ try:
                 print(f"[{tabla}] ⚡ Sin cambios necesarios. Todos los IDs ya existen.")
 
         except Exception as e:
-            # Captura TODO lo que salga mal con esta tabla en específico
             errores_totales += 1
             print(f"\n❌ ERROR EN LA TABLA {tabla}:")
-            print(traceback.format_exc()) # Escupe la línea exacta y el motivo técnico
+            print(traceback.format_exc())
             print("-" * 50)
 
     print("\n--- Sincronización terminada ---")
 
-    # Si una o más tablas fallaron, forzamos a GitHub Actions a mostrar la cruz roja (X)
     if errores_totales > 0:
         print(f"\n⚠️ El proceso finalizó, pero se encontraron {errores_totales} errores. Revisa el log de arriba.")
         sys.exit(1)
 
 except Exception as e:
-    # Esto captura errores graves antes de empezar (ej. contraseña mala de Postgres)
     print("\n🔥 ERROR FATAL: Falló la conexión inicial a la base de datos o BigQuery.")
     print(traceback.format_exc())
     sys.exit(1)
