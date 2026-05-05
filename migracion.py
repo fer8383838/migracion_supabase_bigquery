@@ -1,50 +1,96 @@
 import os
+import sys
+import traceback
 import pandas as pd
 from sqlalchemy import create_engine
 from google.cloud import bigquery
 
-# 1. Configuración de conexión a Supabase
-DB_USER = "postgres.zrqkrtkyzaeywvimgnqk"
-DB_PASS = os.getenv("SUPABASE_PASSWORD")
-DB_HOST = "aws-1-us-east-1.pooler.supabase.com"
-DB_PORT = "6543"
-DB_NAME = "postgres"
+print("Iniciando script de migración...")
 
-# Conexión SQLAlchemy
-conn_string = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
-engine = create_engine(conn_string)
+try:
+    # 1. Configuración de conexión a Supabase
+    DB_USER = "postgres.zrqkrtkyzaeywvimgnqk"
+    DB_PASS = os.getenv("SUPABASE_PASSWORD")
+    DB_HOST = "aws-1-us-east-1.pooler.supabase.com"
+    DB_PORT = "6543"
+    DB_NAME = "postgres"
 
-# 2. Configuración de BigQuery
-PROJECT_ID = "rock-hangar-470622-u5"
-DATASET_ID = "conjunto_datos_propio"
-client = bigquery.Client(project=PROJECT_ID)
+    conn_string = f"postgresql://{DB_USER}:{DB_PASS}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    engine = create_engine(conn_string)
 
-# 3. Lista de tablas a migrar (CORREGIDA)
-tablas_a_migrar = ["job_offers_linkedin", "ofertas_empleo", "ofertas_historial"]
+    # 2. Configuración de BigQuery
+    PROJECT_ID = "rock-hangar-470622-u5"
+    DATASET_ID = "conjunto_datos_propio"
+    client = bigquery.Client(project=PROJECT_ID)
 
-print("Iniciando migración masiva...")
+    # 3. DICCIONARIO DE TABLAS
+    tablas_info = {
+        "job_offers_linkedin": {"id_col": "id", "fecha_col": "created_at"},
+        "ofertas_empleo": {"id_col": "id", "fecha_col": "fecha_hora_publicacion"},
+        "ofertas_historial": {"id_col": "oferta_id", "fecha_col": "fecha_hora_publicacion"}
+    }
 
-for tabla in tablas_a_migrar:
-    try:
-        print(f"--- Procesando tabla: {tabla} ---")
-        
-        # Extracción de Supabase
-        print(f"Extrayendo datos de {tabla}...")
-        df = pd.read_sql_table(tabla, engine)
-        print(f"Filas obtenidas: {len(df)}")
+    errores_totales = 0
+    print("Iniciando carga INCREMENTAL inteligente (Ventana de 3 días)...")
 
-        # Configuración de destino
+    for tabla, config in tablas_info.items():
+        col_id = config["id_col"]
+        col_fecha = config["fecha_col"]
         table_id = f"{PROJECT_ID}.{DATASET_ID}.{tabla}"
-        job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
-
-        # Carga a BigQuery
-        print(f"Cargando en BigQuery: {table_id}...")
-        job = client.load_table_from_dataframe(df, table_id, job_config=job_config)
-        job.result()
         
-        print(f"Éxito: Tabla {tabla} actualizada.")
+        print(f"\n--- Procesando tabla: {tabla} ---")
         
-    except Exception as e:
-        print(f"ERROR en tabla {tabla}: {e}")
+        try:
+            # PASO 1: Extraer
+            query_supa = f"""
+                SELECT * FROM {tabla} 
+                WHERE {col_fecha} >= (CURRENT_DATE - INTERVAL '3 days')
+            """
+            df_nuevos = pd.read_sql_query(query_supa, engine)
+            print(f"[{tabla}] Registros encontrados en Supabase (últimos 3 días): {len(df_nuevos)}")
 
-print("--- Proceso finalizado para todas las tablas ---")
+            if df_nuevos.empty:
+                print(f"[{tabla}] No hay datos nuevos en este periodo. Saltando...")
+                continue
+
+            # PASO 2: Verificar IDs
+            try:
+                query_bq = f"SELECT {col_id} FROM `{table_id}`"
+                df_bq = client.query(query_bq).to_dataframe()
+                ids_en_bq = set(df_bq[col_id].tolist())
+                print(f"[{tabla}] Total de IDs históricos en BigQuery: {len(ids_en_bq)}")
+            except Exception:
+                print(f"[{tabla}] La tabla no existe en BQ. Se creará con la primera carga.")
+                ids_en_bq = set()
+
+            # PASO 3: Filtrar
+            df_final = df_nuevos[~df_nuevos[col_id].isin(ids_en_bq)]
+            print(f"[{tabla}] Registros nuevos para insertar: {len(df_final)}")
+
+            # PASO 4: Insertar
+            if not df_final.empty:
+                job_config = bigquery.LoadJobConfig(write_disposition="WRITE_APPEND")
+                client.load_table_from_dataframe(df_final, table_id, job_config=job_config).result()
+                print(f"[{tabla}] ✅ Actualización finalizada con éxito.")
+            else:
+                print(f"[{tabla}] ⚡ Sin cambios necesarios. Todos los IDs ya existen.")
+
+        except Exception as e:
+            # Captura TODO lo que salga mal con esta tabla en específico
+            errores_totales += 1
+            print(f"\n❌ ERROR EN LA TABLA {tabla}:")
+            print(traceback.format_exc()) # Escupe la línea exacta y el motivo técnico
+            print("-" * 50)
+
+    print("\n--- Sincronización terminada ---")
+
+    # Si una o más tablas fallaron, forzamos a GitHub Actions a mostrar la cruz roja (X)
+    if errores_totales > 0:
+        print(f"\n⚠️ El proceso finalizó, pero se encontraron {errores_totales} errores. Revisa el log de arriba.")
+        sys.exit(1)
+
+except Exception as e:
+    # Esto captura errores graves antes de empezar (ej. contraseña mala de Postgres)
+    print("\n🔥 ERROR FATAL: Falló la conexión inicial a la base de datos o BigQuery.")
+    print(traceback.format_exc())
+    sys.exit(1)
