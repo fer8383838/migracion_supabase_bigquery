@@ -45,7 +45,7 @@ try:
             # PASO 1: Extraer
             query_supa = f"""
                 SELECT * FROM {tabla} 
-                WHERE {col_fecha} >= (CURRENT_DATE - INTERVAL '365 days')
+                WHERE {col_fecha} >= (CURRENT_DATE - INTERVAL '3 days')
             """
             df_nuevos = pd.read_sql_query(query_supa, engine)
             print(f"[{tabla}] Registros encontrados en Supabase (últimos 3 días): {len(df_nuevos)}")
