@@ -28,7 +28,7 @@ try:
     tablas_info = {
         "job_offers_linkedin": {"id_col": "id", "fecha_col": "created_at"},
         "ofertas_empleo": {"id_col": "id", "fecha_col": "fecha_hora_publicacion"},
-        "ofertas_historial": {"id_col": "oferta_id", "fecha_col": "fecha_hora_publicacion"}
+        "ofertas_historial": {"id_col": "historial_id", "fecha_col": "fecha_hora_publicacion"}
     }
 
     errores_totales = 0
@@ -45,7 +45,7 @@ try:
             # PASO 1: Extraer
             query_supa = f"""
                 SELECT * FROM {tabla} 
-                WHERE {col_fecha} >= (CURRENT_DATE - INTERVAL '3 days')
+                WHERE {col_fecha} >= (CURRENT_DATE - INTERVAL '365 days')
             """
             df_nuevos = pd.read_sql_query(query_supa, engine)
             print(f"[{tabla}] Registros encontrados en Supabase (últimos 3 días): {len(df_nuevos)}")
