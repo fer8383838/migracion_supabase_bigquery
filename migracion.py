@@ -24,11 +24,13 @@ try:
     DATASET_ID = "conjunto_datos_propio"
     client = bigquery.Client(project=PROJECT_ID)
 
-    # 3. DICCIONARIO DE TABLAS
+    # 3. DICCIONARIO DE TABLAS (¡AQUÍ ESTÁ LA MAGIA!)
     tablas_info = {
         "job_offers_linkedin": {"id_col": "id", "fecha_col": "created_at"},
         "ofertas_empleo": {"id_col": "id", "fecha_col": "fecha_hora_publicacion"},
-        "ofertas_historial": {"id_col": "historial_id", "fecha_col": "fecha_hora_publicacion"}
+        "ofertas_historial": {"id_col": "historial_id", "fecha_col": "fecha_hora_publicacion"},
+        # NUEVA TABLA MAESTRA AGREGADA PARA LA CARGA INCREMENTAL:
+        "ofertas_dashboard_final": {"id_col": "id_maestro", "fecha_col": "fecha_publicacion_unificada"}
     }
 
     errores_totales = 0
@@ -55,11 +57,9 @@ try:
                 continue
 
             # PASO 1.5: Limpieza de tipos de datos para PyArrow (EL FIX)
-            # Esto busca columnas que Pandas guardó como texto, pero que por dentro tienen fechas
             for col in df_nuevos.columns:
                 if df_nuevos[col].dtype == 'object':
                     valid_data = df_nuevos[col].dropna()
-                    # Si el primer dato válido de la columna es una fecha, convierte toda la columna
                     if not valid_data.empty and isinstance(valid_data.iloc[0], datetime.date):
                         df_nuevos[col] = pd.to_datetime(df_nuevos[col])
 
